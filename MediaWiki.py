@@ -1,47 +1,46 @@
 # Parsing articles (MediaWiki) - from assignment 1:
 import bz2
 import re
-from xml.etree.ElementTree import ElementTree
+import xml.etree.ElementTree as ET
 import mwparserfromhell as mwp  # Python library for parsing Wikipedia's markup language (Wikitext).
+
+import zipfile
+import xml.etree.ElementTree as ET
+import mwparserfromhell as mwp
 
 def page_iter(wiki_file):
     """
-        Reads a wiki dump file and creates a generator that yields pages.
-        This function efficiently processes massive XML files by yielding one page at a time
-        instead of loading the entire file into memory.
-
-        Args:
-            wiki_file (str): A path to a compressed (.bz2) wiki dump file.
-
-        Yields:
-            tuple: (article_id, title, body) for each article.
+    Reads a wiki dump from a ZIP file and yields pages.
     """
-    # open compressed bz2 dump file
-    with bz2.open(wiki_file, 'rt', encoding='utf-8', errors='ignore') as f_in:
-        # Instead of loading the entire massive XML file into memory at once, this iterator
-        # yields one piece at a time (working from the inside out) as soon as it finishes reading a tag.
+    # open the zip
+    with zipfile.ZipFile(wiki_file, 'r') as z:
+        # לקיחת שם הקובץ הראשון שנמצא בתוך ה-ZIP (ה-XML עצמו)
+        internal_file_name = z.namelist()[0]
 
-        elems = (elem for _, elem in ElementTree.iterparse(f_in, events=("end",)))
+        # open the file itself
+        with z.open(internal_file_name) as f_in:
+            elems = (elem for _, elem in ET.iterparse(f_in, events=("end",)))
 
-        # Consume the first element and extract the xml namespace from it.
-        elem = next(elems)
-        t = elem.tag
-        ns = t[t.find('{'):t.find('}') + 1]
+            try:
+                elem = next(elems)
+            except StopIteration:
+                return
 
-        for elem in elems:
-            if elem.tag == f'{ns}page':
-                title = elem.find(f'{ns}title').text
-                # Redirect pages should be ignored for indexing purposes
-                if elem.find(f'{ns}redirect') is not None:
-                    continue
+            t = elem.tag
+            ns = t[t.find('{'):t.find('}') + 1]
 
-                # Extracting ID and Body
-                id = elem.find(f'{ns}id').text
-                body = elem.find(f'{ns}revision/{ns}text').text
-                yield id, title, body
+            for elem in elems:
+                if elem.tag == f'{ns}page':
+                    title = elem.find(f'{ns}title').text
+                    if elem.find(f'{ns}redirect') is not None:
+                        continue
 
-                # Clear the element from memory once it has been processed to prevent memory leaks.
-                elem.clear()
+                    doc_id = elem.find(f'{ns}id').text
+                    body = elem.find(f'{ns}revision/{ns}text').text
+
+                    yield doc_id, title, body
+
+                    elem.clear()
 def remove_markdown(text):
     """
         Parses the raw MediaWiki text and removes all technical markup (like templates {{...}} and internal links [[...]]),
