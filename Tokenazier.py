@@ -1,12 +1,13 @@
 import re
 import nltk
-from nltk.corpus import stopwords #A corpus containing lists of stop words for several languages
+from nltk.corpus import stopwords  # A corpus containing lists of stop words for several languages
 from nltk.stem import PorterStemmer
 
 # Initializing resources outside the functions to optimize performance during large-scale indexing.
 nltk.download('stopwords')
 english_stopwords = frozenset(stopwords.words('english'))
 stemmer = PorterStemmer()
+
 
 def tokenize(text):
     """
@@ -27,6 +28,7 @@ def tokenize(text):
     RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){,24}""", re.UNICODE)
     return [token.group() for token in RE_WORD.finditer(text.lower())]
 
+
 def remove_stopWord(tokens):
     """
         Filters out common English stopwords from a list of tokens.
@@ -42,6 +44,7 @@ def remove_stopWord(tokens):
                         "part", "thumb", "including", "second", "following",
                         "many", "however", "would", "became"]
     return [t for t in tokens if t not in english_stopwords and t not in corpus_stopwords]
+
 
 def stemming(tokens):
     """
