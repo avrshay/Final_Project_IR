@@ -1,10 +1,41 @@
 from collections import *
 from nltk.corpus.reader.api import tempfile
-import inverted_index_gcp
+import inverted_index_colab
 from Tokenazier import *
+import hashlib
+from collections import Counter
+from graphframes import GraphFrame
+from pyspark.sql import SparkSession
+
+GF_PKG = "graphframes:graphframes:0.8.3-spark3.5-s_2.12"
+
+# Stop any old session quietly
+try:
+    spark.stop()
+except:
+    pass
+
+spark = (
+    SparkSession.builder
+    .master("local[*]")
+    .appName("IR-GraphFrames")
+    .config("spark.jars.packages", GF_PKG)   # <-- brings in the JAR
+    .config("spark.ui.port", "0")            # free UI port (avoid 'connection refused')
+    .config("spark.driver.bindAddress", "127.0.0.1")
+    .config("spark.driver.host", "127.0.0.1")
+    .config("spark.sql.shuffle.partitions", "8")
+    .getOrCreate()
+)
+
+
+sc = spark.sparkContext
+
 
 NUM_BUCKETS = 124
 
+
+def _hash(s):
+    return hashlib.blake2b(bytes(s, encoding='utf8'), digest_size=5).hexdigest()
 def word_count(text, id):
     """ Count the frequency of each word in `text` (tf) that is not included in
   `all_stopwords` and return entries that will go into our posting lists.
@@ -45,6 +76,21 @@ def reduce_word_counts(unsorted_pl):
   """
     return sorted(unsorted_pl, key=lambda x: x[0])
 
+def calculate_df(postings):
+  ''' Takes a posting list RDD and calculate the df for each token.
+  Parameters:
+  -----------
+    postings: RDD
+      An RDD where each element is a (token, posting_list) pair.
+  Returns:
+  --------
+    RDD
+      An RDD where each element is a (token, df) pair.
+  '''
+    # YOUR CODE HERE
+  df_tokens=postings.mapValues(lambda x:len(x))
+  return df_tokens
+
 
 def token2bucket_id(token):
     return int(_hash(token), 16) % NUM_BUCKETS
@@ -73,7 +119,7 @@ def partition_postings_and_write(postings):
     token_bucket = postings.map(
         lambda x: (token2bucket_id(x[0]), x))  # Placing a suitable bucket for each token, along with its posting list
     union_bucket = token_bucket.groupByKey()  # Token consolidation and posting list by bucket number
-    return union_bucket.map(lambda x: inverted_index_gcp.write_a_posting_list(
+    return union_bucket.map(lambda x: inverted_index_colab.write_a_posting_list(
         x))  # For each bucket we will return the list of locations in its file
 
 
@@ -88,67 +134,25 @@ def merge_posting_locs(locs_list):
 
 
 # title
+def create_inverted_index(pages, type):
+    doc_text_pairs = pages.limit(1000).select(type, "id").rdd  # לשנות בהתאם
+    word_counts = doc_text_pairs.flatMap(lambda x: word_count(x[0], x[1]))
+    postings = word_counts.groupByKey().mapValues(reduce_word_counts)
+    # filtering postings and calculate df
+    postings_filtered = postings.filter(lambda x: len(x[1]) > 10)
+    w2df = calculate_df(postings_filtered)
+    w2df_dict = w2df.collectAsMap()
+    #  partitioning for the different buckets
+    locs_list = partition_postings_and_write(sc.parallelize(postings_filtered)).collect()
+    # merge
+    posting_locs = merge_posting_locs(locs_list)
+    # Create inverted index instance
+    index = inverted_index_colab.InvertedIndex()
+    # Adding the posting locations dictionary to the inverted index
+    index.posting_locs = posting_locs
+    # Add the token - df dictionary to the inverted index
+    index.df = w2df_dict
+    # write the global stats out
+    index.write_index(f'./{type}_index', 'index')
+    return index
 
-title_doc_text_pairs = parquetFile.limit(1000).select("text", "id").rdd  # לשנות בהתאם
-title_word_counts = title_doc_text_pairs.flatMap(lambda x: word_count(x[0], x[1]))
-title_postings = title_word_counts.groupByKey().mapValues(reduce_word_counts)
-# filtering postings and calculate df
-title_postings_filtered = title_postings.filter(lambda x: len(x[1]) > 10)
-title_w2df = calculate_df(title_postings_filtered)
-title_w2df_dict = title_w2df.collectAsMap()
-#  partitioning for the different buckets
-title_locs_list = partition_postings_and_write(sc.parallelize(title_postings_filtered)).collect()
-# merge
-title_posting_locs = merge_posting_locs(title_locs_list)
-# Create inverted index instance
-title_index = InvertedIndex()
-# Adding the posting locations dictionary to the inverted index
-title_index.posting_locs = title_posting_locs
-# Add the token - df dictionary to the inverted index
-title_index.df = w2df_dict
-# write the global stats out
-title_index.write_index('./title_index', 'index')
-
-# body
-
-body_doc_text_pairs = parquetFile.limit(1000).select("text", "id").rdd  # לשנות בהתאם
-body_word_counts = body_doc_text_pairs.flatMap(lambda x: word_count(x[0], x[1]))
-body_postings = body_word_counts.groupByKey().mapValues(reduce_word_counts)
-# filtering postings and calculate df
-body_postings_filtered = body_postings.filter(lambda x: len(x[1]) > 10)
-body_w2df = calculate_df(body_postings_filtered)
-body_w2df_dict = body_w2df.collectAsMap()
-#  partitioning for the different buckets
-body_locs_list = partition_postings_and_write(sc.parallelize(body_postings_filtered)).collect()
-# merge
-body_posting_locs = merge_posting_locs(body_locs_list)
-# Create inverted index instance
-body_index = InvertedIndex()
-# Adding the posting locations dictionary to the inverted index
-body_index.posting_locs = body_posting_locs
-# Add the token - df dictionary to the inverted index
-body_index.df = w2df_dict
-# write the global stats out
-body_index.write_index('./body_indices', 'index')
-
-# anchor
-
-anchor_doc_text_pairs = parquetFile.limit(1000).select("text", "id").rdd  # לשנות בהתאם
-anchor_word_counts = anchor_doc_text_pairs.flatMap(lambda x: word_count(x[0], x[1]))
-anchor_postings = anchor_word_counts.groupByKey().mapValues(reduce_word_counts)
-# filtering postings and calculate df
-anchor_postings_filtered = anchor_postings.filter(lambda x: len(x[1]) > 10)
-anchor_w2df = calculate_df(anchor_postings_filtered)
-anchor_w2df_dict = anchor_w2df.collectAsMap()
-# partitioning for the different buckets
-anchor_locs_list = partition_postings_and_write(sc.parallelize(anchor_postings)).collect()
-# merge
-anchor_posting_locs = merge_posting_locs(anchor_locs_list)
-# Create inverted index instance
-anchor_index = InvertedIndex()
-# Adding the posting locations dictionary to the inverted index
-anchor_index.posting_locs = anchor_posting_locs
-# Add the token - df dictionary to the inverted index
-anchor_index.df = w2df_dict
-# write the global stats out
-anchor_index.write_index('./anchor_index', 'index')
