@@ -87,7 +87,6 @@ def calculate_df(postings):
     RDD
       An RDD where each element is a (token, df) pair.
   '''
-    # YOUR CODE HERE
   df_tokens=postings.mapValues(lambda x:len(x))
   return df_tokens
 
@@ -115,7 +114,6 @@ def partition_postings_and_write(postings):
       offsets its posting list was written to. See `write_a_posting_list` for
       more details.
   """
-    # YOUR CODE HERE
     token_bucket = postings.map(
         lambda x: (token2bucket_id(x[0]), x))  # Placing a suitable bucket for each token, along with its posting list
     union_bucket = token_bucket.groupByKey()  # Token consolidation and posting list by bucket number

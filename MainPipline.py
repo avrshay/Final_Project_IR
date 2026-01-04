@@ -1,61 +1,63 @@
-import re
-import os
-from MediaWiki import page_iter, to_wikicode, get_wikilinks, remove_markdown, filter_article_links, get_number_pattern
-from Tokenazier import tokenize, remove_stopWord, stemming
+import pyspark
+from pyspark.sql import SparkSession
+from Index import *
+from inverted_index_gcp import InvertedIndex
 
 
-def process_wikipedia_data(file_path, limit=5):
+def build_and_save_index(data_rdd, sc, output_dir, index_name):
     """
-    Processes a Wikipedia dump file using an optimized pipeline.
-    Filters out non-article pages and removes numeric noise using custom patterns.
+    מבצעת את כל תהליך האינדוקס: ספירת מילים, חלוקה לבאקטים ושמירה.
     """
-    if not os.path.exists(file_path):
-        print(f"Error: The file '{file_path}' was not found.")
-        return
+    print(f"Starting process for: {index_name}...")
 
-    # Compile the complex number pattern from your MediaWiki utility
-    number_pattern = re.compile(get_number_pattern(), re.UNICODE)
+    # 1. Word Count & Grouping
+    word_counts = data_rdd.flatMap(lambda x: word_count(x[0], x[1]))
+    postings = word_counts.groupByKey().mapValues(reduce_word_counts)
 
-    print(f"--- Starting optimized processing of file: {file_path} ---")
+    # 2. Filtering (רק מילים שמופיעות ביותר מ-10 מסמכים)
+    postings_filtered = postings.filter(lambda x: len(x[1]) > 10)
 
-    valid_articles_count = 0
-    for doc_id, title, raw_body in page_iter(file_path):
-        # Optimization: Skip non-article namespaces (Files, Talk, Wikipedia, etc.)
-        if not filter_article_links(title):
-            continue
+    # 3. Calculate DF
+    # הערה: הנחה ש-calculate_df מוגדרת אצלך ב-Index.py או מיובאת
+    w2df = calculate_df(postings_filtered)
+    w2df_dict = w2df.collectAsMap()
 
-        valid_articles_count += 1
+    # 4. Partitioning and Writing to Buckets
+    locs_list = partition_postings_and_write(postings_filtered).collect()
 
-        # 1. Remove MediaWiki markdown/syntax
-        clean_text = remove_markdown(raw_body)
+    # 5. Merge locations
+    posting_locs = merge_posting_locs(locs_list)
 
-        # 2. Use your custom regex to remove numbers (e.g., "1", "4", "1,000")
-        # We replace matches with a space to avoid merging adjacent words
-        clean_text_no_numbers = number_pattern.sub(' ', clean_text)
+    # 6. Create and Save Inverted Index
+    idx = InvertedIndex()
+    idx.posting_locs = posting_locs
+    idx.df = w2df_dict
+    idx.write_index(output_dir, index_name)
 
-        #אפשר להכניס כאן הסרת תאריכים ועוד
-
-        # 3. Tokenize the text (now cleaned of numbers)
-        tokens = tokenize(clean_text_no_numbers)
-
-        # 4. Remove English stopwords and apply Porter Stemming
-        filtered_tokens = remove_stopWord(tokens)
-        stemmed_tokens = stemming(filtered_tokens)
-
-        # Detailed output for the first 'limit' articles
-        if valid_articles_count <= limit:
-            print(f"\n--- Valid Article #{valid_articles_count}: {title} ---")
-            print(f"Tokens count: {len(stemmed_tokens)}")
-            print(f"First 10 tokens: {stemmed_tokens[:10]}")
-            print("-" * 40)
-
-        # Stop processing once the limit is reached
-        if valid_articles_count >= limit:
-            break
-
-    print(f"--- Finished! Processed {valid_articles_count} articles. ---")
+    print(f"Finished {index_name}. Index saved to {output_dir}")
 
 
 if __name__ == "__main__":
-    # Replace with your actual file path
-    process_wikipedia_data("enwiki-pages-articles.zip")
+    # איתחול Spark
+    conf = pyspark.SparkConf().setAppName("IndexingJob")
+    sc = pyspark.SparkContext(conf=conf)
+    spark = SparkSession.builder.getOrCreate()
+
+    # טעינת הנתונים (נתיב לקובץ ה-Parquet שלך)
+    path = "path/to/your/data.parquet"
+    parquetFile = spark.read.parquet(path)
+
+    # הרצה עבור Title
+    title_rdd = parquetFile.limit(1000).select("title", "id").rdd
+    build_and_save_index(title_rdd, sc, './title_index', 'index')
+
+    # הרצה עבור Body
+    body_rdd = parquetFile.limit(1000).select("text", "id").rdd
+    build_and_save_index(body_rdd, sc, './body_indices', 'index')
+
+    # הרצה עבור Anchor
+    # הערה: וודא שיש עמודה כזו ב-Parquet או שנה בהתאם
+    anchor_rdd = parquetFile.limit(1000).select("anchor_text", "id").rdd
+    build_and_save_index(anchor_rdd, sc, './anchor_index', 'index')
+
+    print("All indices have been created successfully!")

@@ -31,6 +31,12 @@ def search():
       return jsonify(res)
     # BEGIN SOLUTION
 
+    # PageViews - לסדדר
+    # Query Processing
+    # Dictionary (id, title)
+    # Retrieval Logic
+    # BM25 , TF-IDF
+
     # END SOLUTION
     return jsonify(res)
 
