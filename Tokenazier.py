@@ -59,21 +59,18 @@ def stemming(tokens):
     return res
 
 
-def proccesc_q(querie):
+def process_q(query):
     """
     Preprocesses a raw search query by applying tokenization, stopword removal, and stemming.
 
-    This pipeline transforms a natural language string into a list of normalized tokens,
-    preparing it for search against the inverted index.
-
     Args:
-        querie (str): The raw input string from the user.
+        query (str): The raw input string from the user.
 
     Returns:
         list: A list of processed tokens (strings) representing the core terms of the query.
 
     Example:
-        >>> proccesc_q("The quick brown foxes are jumping")
+        >>> process_q("The quick brown foxes are jumping")
         ['quick', 'brown', 'fox', 'jump']
     """
-    return stemming(remove_stopWord(tokenize(querie)))
+    return stemming(remove_stopWord(tokenize(query)))
