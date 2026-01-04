@@ -1,6 +1,4 @@
 # Parsing articles (MediaWiki) - from assignment 1:
-import bz2
-import re
 import xml.etree.ElementTree as ET
 import mwparserfromhell as mwp  # Python library for parsing Wikipedia's markup language (Wikitext).
 
