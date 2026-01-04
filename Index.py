@@ -1,13 +1,7 @@
 from nltk.corpus.reader.api import tempfile
 
-corpus_stopwords = ['category', 'references', 'also', 'links', 'extenal', 'see', 'thumb']
-RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
+import Tokenazier
 
-all_stopwords = english_stopwords.union(corpus_stopwords)
-
-NUM_BUCKETS = 124
-def token2bucket_id(token):
-  return int(_hash(token),16) % NUM_BUCKETS
 
 def word_count(text, id):
   ''' Count the frequency of each word in `text` (tf) that is not included in
@@ -24,14 +18,12 @@ def word_count(text, id):
       A list of (token, (doc_id, tf)) pairs
       for example: [("Anarchism", (12, 5)), ...]
   '''
-  tokens = [token.group() for token in RE_WORD.finditer(text.lower())]
+  tokens = tokenize(text)
   # YOUR CODE HERE
   # remove stop_words
-  token_without_stopWords=[]
-  for token in tokens:
-    if token not in all_stopwords:
-      token_without_stopWords.append(token)
-  tf_tokens=Counter(token_without_stopWords)
+  token_without_stopWords=remove_stopWord(tokens)
+  token_stemming=stemming(tokens)
+  tf_tokens=Counter(token_stemming)
   list_tokens=[]
   for token, tf in tf_tokens.items():
     list_tokens.append((token,(id,tf)))
@@ -50,6 +42,11 @@ def reduce_word_counts(unsorted_pl):
   '''
   # YOUR CODE HERE
   return sorted(unsorted_pl,key=lambda x: x[0])
+
+NUM_BUCKETS = 124
+def token2bucket_id(token):
+  return int(_hash(token),16) % NUM_BUCKETS
+
 
 def partition_postings_and_write(postings):
   ''' A function that partitions the posting lists into buckets, writes out

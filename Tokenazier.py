@@ -37,7 +37,11 @@ def remove_stopWord(tokens):
         Returns:
             list: A list of tokens excluding those found in the English stopwords corpus.
     """
-    return [t for t in tokens if t not in english_stopwords]
+    corpus_stopwords = ["category", "references", "also", "external", "links",
+                        "may", "first", "see", "history", "people", "one", "two",
+                        "part", "thumb", "including", "second", "following",
+                        "many", "however", "would", "became"]
+    return [t for t in tokens if t not in english_stopwords and t not in corpus_stopwords]
 
 def stemming(tokens):
     """
