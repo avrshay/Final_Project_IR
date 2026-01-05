@@ -1,4 +1,8 @@
+from BM25 import *
+import pickle
 from flask import Flask, request, jsonify
+import os
+
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
@@ -6,6 +10,40 @@ class MyFlaskApp(Flask):
 
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+
+#Global:
+def load_pickle_or_default(filename, default_val=None):
+    if default_val is None:
+        default_val = {}
+
+    if not os.path.exists(filename):
+        print(f"WARNING: File '{filename}' not found! Using empty default.")
+        return default_val
+
+    try:
+        with open(filename, 'rb') as f:
+            data = pickle.load(f)
+            print(f"Successfully loaded {filename}")
+            return data
+    except Exception as e:
+        print(f"ERROR: Failed to load '{filename}'. Reason: {e}")
+        return default_val
+
+#Loading files:
+try:
+    # מניחים שהקובץ index.pkl ו-index.bin נמצאים בתיקייה הנוכחית
+    inverted = InvertedIndex.read_index('.', 'index')
+    print("Inverted Index loaded successfully.")
+except Exception as e:
+    print(f"CRITICAL WARNING: Could not load Inverted Index. Search will not work. Reason: {e}")
+    inverted = None  # או שתאתחל אינדקס ריק: InvertedIndex()
+
+DL = load_pickle_or_default('DL.pkl')
+id_to_title = load_pickle_or_default('id_to_title.pkl')
+pagerank = load_pickle_or_default('pagerank.pkl')
+
+#Create the search engine
+bm25 = BM25_from_index(inverted, DL)
 
 @app.route("/search")
 def search():
@@ -31,11 +69,14 @@ def search():
       return jsonify(res)
     # BEGIN SOLUTION
 
-    # PageViews - לסדדר
-    # Query Processing
-    # Dictionary (id, title)
-    # Retrieval Logic
-    # BM25 , TF-IDF
+    search_results = bm25.search(query, N=10)
+
+    # (wiki_id, title)
+    for doc_id, score in search_results:
+
+        title = id_to_title.get(doc_id, "Unknown Title")
+
+        res.append((str(doc_id), title))
 
     # END SOLUTION
     return jsonify(res)
