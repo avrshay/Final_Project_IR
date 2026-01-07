@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession
 # Custom imports (assuming these files exist in the same directory)
 import config
 import preprocessing
-from inverted_index_colab import InvertedIndex
+from inverted_index_gcp import InvertedIndex
 
 # ==========================================
 # 1. Environment Setup
@@ -35,7 +35,7 @@ except:
 spark = (
     SparkSession.builder
     .master("local[*]")
-    .appName("IR-GraphFrames")
+    .appName("IR-Project-GCP")
     .config("spark.jars.packages", GF_PKG)
     .config("spark.ui.port", "0")
     .config("spark.driver.bindAddress", "127.0.0.1")
@@ -52,8 +52,6 @@ print("Spark:", spark.version, "| GraphFrames Python wrapper imported OK")
 # ==========================================
 
 # --- Authentication ---
-# Note: When running locally, ensure 'gcloud auth login' was run in the terminal.
-# The following block handles Colab-specific auth if needed.
 try:
     from google.colab import auth
 
@@ -68,33 +66,47 @@ try:
     signal.alarm(AUTH_TIMEOUT)
     auth.authenticate_user()
     signal.alarm(0)
+
 except ImportError:
-    pass  # Not running in Colab
+    pass
 except Exception as e:
     print(f"Auth Warning: {e}")
     signal.alarm(0)
 
 # --- Configuration ---
-project_id = 'ir-assignment-3-480614'
-data_bucket_name = 'wikidata20210801_preprocessed'
+project_id = 'ir-final-project-2025'
+data_bucket_name = '319134458_214906935'
 
 # Set project configuration
 os.system(f"gcloud config set project {project_id}")
 
+path = f"gs://{data_bucket_name}/*.parquet"
+
+try:
+    parquetFile = spark.read.parquet(path)
+    print("Successfully connected to GCS and read parquet files.")
+except Exception as e:
+    print(f"Error reading from GCS: {e}")
+    print("Make sure the .parquet files exist in the bucket path specified!")
+    sys.exit(1)
+
+"""
 # Handle data paths and cleanup
-if "wikidata_preprocessed" in os.environ:
-    del os.environ["wikidata_preprocessed"]
+#if "wikidata_preprocessed" in os.environ:
+#    del os.environ["wikidata_preprocessed"]
+
 
 # Create directory and download data if not exists
 try:
-    os.makedirs("wikidumps", exist_ok=True)
+   os.makedirs("wikidumps", exist_ok=True)
 
-    if os.environ.get("wikidata_preprocessed") is None:
-        print("Downloading data from bucket...")
-        # Using os.system instead of magic command (!)
-        os.system(f"gsutil -u {project_id} cp gs://{data_bucket_name}/multistream1_preprocessed.parquet wikidumps/")
+   if os.environ.get("wikidata_preprocessed") is None:
+       print("Downloading data from bucket...")
+       # Using os.system instead of magic command (!)
+       os.system(f"gsutil -u {project_id} cp gs://{data_bucket_name}/multistream1_preprocessed.parquet wikidumps/")
 except Exception as e:
-    print(f"Download warning: {e}")
+   print(f"Download warning: {e}")
+
 
 # Define the reading path
 try:
@@ -104,6 +116,7 @@ try:
         path = "wikidumps/*"
 except:
     path = "wikidumps/*"
+"""
 
 # ==========================================
 # 4. Main Processing Pipeline
@@ -112,10 +125,11 @@ except:
 # 1. Read Parquet file
 print(f"Reading data from: {path}")
 parquetFile = spark.read.parquet(path)
-# parquetFile.show() # Uncomment to inspect data
 
 # 2. Limit to 1000 docs for testing (as per original code)
-doc_text_pairs = parquetFile.limit(1000).select("text", "id").rdd
+#doc_text_pairs = parquetFile.limit(1000).select("text", "id").rdd
+
+doc_text_pairs = parquetFile.select("text", "id").rdd
 
 # 3. Calculate Word Counts (Term Frequency)
 # Using the function from preprocessing.py
@@ -151,11 +165,13 @@ id_to_title_map = parquetFile.limit(1000).select("id", "title").rdd.collectAsMap
 with open('id_to_title.pkl', 'wb') as f:
     pickle.dump(id_to_title_map, f)
 
+
 # 7. Write Index to Disk
-print("Writing Index to Disk...")
+print("Writing Index to Locl Disk...")
 # Using the function from preprocessing.py to partition and write
 posting_locs_rdd = preprocessing.partition_postings_and_write(postings_filtered)
 posting_locs_list = posting_locs_rdd.collect()
+
 
 # 8. Merge & Finalize Index
 super_posting_locs = defaultdict(list)
@@ -163,10 +179,18 @@ for posting_loc in posting_locs_list:
     for k, v in posting_loc.items():
         super_posting_locs[k].extend(v)
 
-# Create Inverted Index instance and save
+# Create Inverted Index instance and save locally
 inverted = InvertedIndex()
 inverted.posting_locs = super_posting_locs
 inverted.df = w2df_dict
 inverted.write_index('.', 'index')
 
-print("Index created and written successfully.")
+# Upload to Bucket
+os.system(f"gsutil cp index.pkl gs://{data_bucket_name}/")
+os.system(f"gsutil cp DL.pkl gs://{data_bucket_name}/")
+os.system(f"gsutil cp id_to_title.pkl gs://{data_bucket_name}/")
+
+os.system(f"gsutil -m cp *.bin gs://{data_bucket_name}/")
+
+print(f"DONE! All index files uploaded to gs://{data_bucket_name}/")
+
