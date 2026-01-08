@@ -3,6 +3,12 @@ import sys
 import signal
 import pickle
 from collections import defaultdict
+import nltk
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    print("Downloading NLTK punkt tokenizer...")
+    nltk.download('punkt')
 
 # PySpark imports
 from pyspark.sql import SparkSession
@@ -55,8 +61,7 @@ except Exception as e:
 # ==========================================
 # 3. PageRank Calculation
 # ==========================================
-
-pages_links = parquetFile.select("id", "anchor_text").rdd.cache()
+pages_links = parquetFile.select("id", "anchor_text").where(col("anchor_text").isNotNull()).rdd
 create_page_rank(pages_links)
 
 # ==========================================

@@ -22,7 +22,10 @@ def partition_postings_and_write(postings):
     buckets = buckets.map(InvertedIndex.write_a_posting_list)
     return buckets
 
-def word_count(text, id):
+from nltk.stem.porter import PorterStemmer
+stemmer = PorterStemmer()
+
+def word_count(id, text):
     ''' Count the frequency of each word in `text` (tf) that is not included in
     `all_stopwords` and return entries that will go into our posting lists.
     '''
@@ -32,8 +35,6 @@ def word_count(text, id):
     filtered_tokens = [w for w in tokens if w not in all_stopwords]
 
     #Stemming
-    from nltk.stem.porter import PorterStemmer
-    stemmer = PorterStemmer()
     after_stem = []
     for t in filtered_tokens:
         after_stem.append(stemmer.stem(t))
