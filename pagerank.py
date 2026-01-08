@@ -26,48 +26,44 @@ def generate_graph(pages):
     '''
 
     # Create edges: Breaking all links into separate sides
-    # Assuming structure: (source_id, [(dest_id, name), ...])
-    edges = pages.flatMap(lambda x: [(x[0], page_id) for page_id, name in x[1]])
+    edges = pages.flatMap(lambda row: [(row[0], link.id) for link in row[1]])
 
     # Remove duplicate edges
     edges = edges.distinct()
 
-    # Create vertices: Extract all source IDs and all destination IDs
-    vertices = pages.flatMap(lambda x: [(x[0],)] + [(page_id,) for page_id, name in x[1]])
-
-    # Remove duplicate vertices
-    vertices = vertices.distinct()
+    vertices = edges.flatMap(lambda x: [x[0], x[1]])  # returns the list of nodes
+    vertices = vertices.distinct().map(lambda x: (x,))
 
     return edges, vertices
 
-def create_page_rank(pages_links):
+def create_page_rank(bucket_name,pages_links):
     """
     Main function to load data, build the graph, and run PageRank.
     """
-    # Construct the graph
-    edges, vertices = generate_graph(pages_links)
 
-    # Prepare DataFrames for GraphFrames
-    # Repartitioning for optimization
+    # construct the graph
+    edges, vertices = generate_graph(pages_links)
+    print("generate_graph success")
+
+    # compute PageRank
     edgesDF = edges.toDF(['src', 'dst']).repartition(124, 'src')
     verticesDF = vertices.toDF(['id']).repartition(124, 'id')
 
-    # Create GraphFrame
     g = GraphFrame(verticesDF, edgesDF)
 
-    # Run PageRank
     pr_results = g.pageRank(resetProbability=0.15, maxIter=6)
-
-    # Extract and sort results
     pr = pr_results.vertices.select("id", "pagerank")
     pr = pr.sort(col('pagerank').desc())
 
-    # Save results
-    pr.repartition(1).write.mode('overwrite').csv('pr', compression="gzip")
+    pr.repartition(1).write.csv(f'gs://{bucket_name}/pr', compression="gzip")
+
+    print("pr success")
+
     pagerank_dict = pr.rdd.collectAsMap()
 
     with open('pagerank.pkl', 'wb') as f:
         pickle.dump(pagerank_dict, f)
+        print("save PR pkl")
 
     # Show results
     pr.show()

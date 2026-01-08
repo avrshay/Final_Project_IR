@@ -45,7 +45,7 @@ project_id = 'ir-final-project-2025'
 data_bucket_name = '319134458_214906935'
 
 # Set project configuration
-os.system(f"gcloud config set project {project_id}")
+#os.system(f"gcloud config set project {project_id}")
 
 path = f"gs://{data_bucket_name}/*.parquet"
 
@@ -62,8 +62,12 @@ except Exception as e:
 # 3. PageRank Calculation
 # ==========================================
 pages_links = parquetFile.select("id", "anchor_text").where(col("anchor_text").isNotNull()).rdd
-create_page_rank(pages_links)
 
+print(f"pages_links created")
+
+create_page_rank(data_bucket_name,pages_links)
+
+print(f"PageRank ready")
 # ==========================================
 # 4. Inverted Index Pipeline
 # ==========================================
