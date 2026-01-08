@@ -53,8 +53,8 @@ def create_page_rank():
 
     # Prepare DataFrames for GraphFrames
     # Repartitioning for optimization
-    edgesDF = edges.toDF(['src', 'dst']).repartition(4, 'src')
-    verticesDF = vertices.toDF(['id']).repartition(4, 'id')
+    edgesDF = edges.toDF(['src', 'dst']).repartition(124, 'src')
+    verticesDF = vertices.toDF(['id']).repartition(124, 'id')
 
     # Create GraphFrame
     g = GraphFrame(verticesDF, edgesDF)

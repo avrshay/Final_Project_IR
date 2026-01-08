@@ -1,7 +1,7 @@
 # preprocessing.py
 from collections import Counter
 from config import *
-from inverted_index_colab import *
+from inverted_index_gcp import *
 
 # ==========================================
 # 4. Core Logic Functions
