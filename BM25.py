@@ -3,7 +3,7 @@ import math
 import builtins
 from nltk.stem.porter import PorterStemmer
 from config import *
-from inverted_index_colab import *
+from inverted_index_gcp import *
 from collections import Counter
 
 """#### BM25

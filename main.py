@@ -56,32 +56,17 @@ except Exception as e:
 # 3. PageRank Calculation
 # ==========================================
 
-pages_links = parquetFile.select("id", "anchor_text").rdd
-
-edges, vertices = generate_graph(pages_links)
-
-edgesDF = edges.toDF(['src', 'dst']).repartition(4, 'src')
-verticesDF = vertices.toDF(['id']).repartition(4, 'id')
-
-g = GraphFrame(verticesDF, edgesDF)
-pr_results = g.pageRank(resetProbability=0.15, maxIter=6)
-pr = pr_results.vertices.select("id", "pagerank")
-pr = pr.sort(col('pagerank').desc())
-
-pr.repartition(1).write.mode('overwrite').csv('pr', compression="gzip")
-pagerank_dict = pr.rdd.collectAsMap()
-
-with open('pagerank.pkl', 'wb') as f:
-    pickle.dump(pagerank_dict, f)
+pages_links = parquetFile.select("id", "anchor_text").rdd.cache()
+create_page_rank(pages_links)
 
 # ==========================================
 # 4. Inverted Index Pipeline
 # ==========================================
 
-doc_text_pairs = parquetFile.select("text", "id").rdd
+doc_text_pairs = pages_links
 
 # 2. Calculate Word Counts
-word_counts = doc_text_pairs.flatMap(lambda x: preprocessing.word_count(x[0], x[1]))
+word_counts = doc_text_pairs.flatMap(lambda x: preprocessing.word_count(x[0], x[1])).cache()
 
 # 3. Create Posting Lists
 postings = word_counts.groupByKey().mapValues(preprocessing.reduce_word_counts)

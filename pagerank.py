@@ -40,14 +40,10 @@ def generate_graph(pages):
 
     return edges, vertices
 
-def create_page_rank():
+def create_page_rank(pages_links):
     """
     Main function to load data, build the graph, and run PageRank.
     """
-
-    # Load data
-    pages_links = parquetFile.limit(1000).select("id","anchor_text").rdd
-
     # Construct the graph
     edges, vertices = generate_graph(pages_links)
 
