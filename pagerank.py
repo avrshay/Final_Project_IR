@@ -46,24 +46,57 @@ def create_page_rank(bucket_name,pages_links):
     print("generate_graph success")
 
     # compute PageRank
-    edgesDF = edges.toDF(['src', 'dst']).repartition(124, 'src')
-    verticesDF = vertices.toDF(['id']).repartition(124, 'id')
+    edgesDF = edges.toDF(['src', 'dst']).repartition(64, 'src')
+    verticesDF = vertices.toDF(['id']).repartition(64, 'id')
+
+    print("Caching DataFrames...")
+    edgesDF.cache()
+    verticesDF.cache()
+
+    # Force computation to populate cache
+    edge_count = edgesDF.count()
+    vertex_count = verticesDF.count()
+    print(f"Graph has {vertex_count} vertices and {edge_count} edges")
 
     g = GraphFrame(verticesDF, edgesDF)
 
-    pr_results = g.pageRank(resetProbability=0.15, maxIter=6)
-    pr = pr_results.vertices.select("id", "pagerank")
-    pr = pr.sort(col('pagerank').desc())
+    try:
+        pr_results = g.pageRank(resetProbability=0.15, maxIter=3)
+        print("PageRank computation completed!")
 
-    pr.repartition(1).write.csv(f'gs://{bucket_name}/pr', compression="gzip")
+        # Extract results
+        pr = pr_results.vertices.select("id", "pagerank")
+        pr = pr.sort(col('pagerank').desc())
 
-    print("pr success")
+        # Cache before operations
+        pr.cache()
+        pr_count = pr.count()
 
-    pagerank_dict = pr.rdd.collectAsMap()
+        # Write to GCS - using mode('overwrite') to avoid conflicts
+        pr.repartition(1).write.mode('overwrite').csv(f'gs://{bucket_name}/pr', compression="gzip")
 
-    with open('pagerank.pkl', 'wb') as f:
-        pickle.dump(pagerank_dict, f)
-        print("save PR pkl")
+        print("pr success")
 
-    # Show results
-    pr.show()
+        # Save as pickle
+        pagerank_dict = pr.rdd.collectAsMap()
+
+        with open('pagerank.pkl', 'wb') as f:
+            pickle.dump(pagerank_dict, f)
+            print("save PR pkl")
+
+        # Show results
+        pr.show(20)
+
+    except Exception as e:
+        print(f"ERROR during PageRank computation: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+    finally:
+        # Cleanup
+        print("Cleaning up cached data...")
+        edgesDF.unpersist()
+        verticesDF.unpersist()
+        if 'pr' in locals():
+            pr.unpersist()

@@ -4,6 +4,7 @@ import signal
 import pickle
 from collections import defaultdict
 import nltk
+
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
@@ -25,17 +26,17 @@ from inverted_index_gcp import InvertedIndex
 # 1. Environment Setup
 # ==========================================
 
-GF_PKG = "graphframes:graphframes:0.8.3-spark3.5-s_2.12"
+GF_PKG = "graphframes:graphframes:0.8.2-spark3.1-s_2.12"
 
 spark = SparkSession.builder \
     .appName("IR-Project-GCP") \
     .config("spark.jars.packages", GF_PKG) \
+    .config("spark.sql.shuffle.partitions", "16") \
+    .config("spark.default.parallelism", "16") \
     .getOrCreate()
 
 sc = spark.sparkContext
 sc.setLogLevel("WARN")
-
-print(f"Spark initialized: {spark.version}")
 
 # ==========================================
 # 2. Data Configuration & Loading
@@ -44,8 +45,11 @@ print(f"Spark initialized: {spark.version}")
 project_id = 'ir-final-project-2025'
 data_bucket_name = '319134458_214906935'
 
-# Set project configuration
-#os.system(f"gcloud config set project {project_id}")
+checkpoint_dir = f"gs://{data_bucket_name}/checkpoints"
+sc.setCheckpointDir(checkpoint_dir)
+print(f"Checkpoint directory set to: {checkpoint_dir}")
+
+print(f"Spark initialized: {spark.version}")
 
 path = f"gs://{data_bucket_name}/*.parquet"
 
@@ -59,20 +63,11 @@ except Exception as e:
     sys.exit(1)
 
 # ==========================================
-# 3. PageRank Calculation
-# ==========================================
-pages_links = parquetFile.select("id", "anchor_text").where(col("anchor_text").isNotNull()).rdd
-
-print(f"pages_links created")
-
-create_page_rank(data_bucket_name,pages_links)
-
-print(f"PageRank ready")
-# ==========================================
 # 4. Inverted Index Pipeline
 # ==========================================
 
-doc_text_pairs = pages_links
+print("Starting Inverted Index creation...")
+doc_text_pairs = parquetFile.select("id", "text").where(col("text").isNotNull()).rdd
 
 # 2. Calculate Word Counts
 word_counts = doc_text_pairs.flatMap(lambda x: preprocessing.word_count(x[0], x[1])).cache()
@@ -99,7 +94,7 @@ with open('DL.pkl', 'wb') as f:
 
 # 7. Save ID to Title Map
 print("Saving id_to_title.pkl...")
-id_to_title_map = parquetFile.select("id", "title").rdd.collectAsMap()
+id_to_title_map = parquetFile.select("id", "title").where(col("title").isNotNull()).rdd.collectAsMap()
 with open('id_to_title.pkl', 'wb') as f:
     pickle.dump(id_to_title_map, f)
 
@@ -120,15 +115,34 @@ inverted.df = w2df_dict
 inverted.write_index('.', 'index')
 
 # ==========================================
+# 3. PageRank Calculation
+# ==========================================
+
+pages_links = parquetFile.select("id", "anchor_text").where(col("anchor_text").isNotNull()).rdd
+
+print(f"pages_links created")
+
+try:
+    create_page_rank(data_bucket_name, pages_links)
+    print(f"PageRank ready")
+except Exception as e:
+    print(f"ERROR in PageRank: {e}")
+    # Continue anyway - to build the inverted index
+    sys.exit(1)
+
+# ==========================================
 # 5. Upload Results to GCS
 # ==========================================
+print("Uploading files to GCS...")
 
 # Upload to Bucket
 os.system(f"gsutil cp index.pkl gs://{data_bucket_name}/")
 os.system(f"gsutil cp DL.pkl gs://{data_bucket_name}/")
 os.system(f"gsutil cp id_to_title.pkl gs://{data_bucket_name}/")
 
-os.system(f"gsutil cp pagerank.pkl gs://{data_bucket_name}/")
+# Only upload pagerank if it exists
+if os.path.exists('pagerank.pkl'):
+    os.system(f"gsutil cp pagerank.pkl gs://{data_bucket_name}/")
 
 os.system(f"gsutil -m cp *.bin gs://{data_bucket_name}/")
 
