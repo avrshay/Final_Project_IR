@@ -115,6 +115,18 @@ inverted.df = w2df_dict
 inverted.write_index('.', 'index')
 
 # ==========================================
+# 5. Upload Results to GCS
+# ==========================================
+print("Uploading files to GCS...")
+
+# Upload to Bucket
+os.system(f"gsutil cp index.pkl gs://{data_bucket_name}/")
+os.system(f"gsutil cp DL.pkl gs://{data_bucket_name}/")
+os.system(f"gsutil cp id_to_title.pkl gs://{data_bucket_name}/")
+os.system(f"gsutil -m cp *.bin gs://{data_bucket_name}/")
+
+
+# ==========================================
 # 3. PageRank Calculation
 # ==========================================
 
@@ -136,14 +148,9 @@ except Exception as e:
 print("Uploading files to GCS...")
 
 # Upload to Bucket
-os.system(f"gsutil cp index.pkl gs://{data_bucket_name}/")
-os.system(f"gsutil cp DL.pkl gs://{data_bucket_name}/")
-os.system(f"gsutil cp id_to_title.pkl gs://{data_bucket_name}/")
 
 # Only upload pagerank if it exists
 if os.path.exists('pagerank.pkl'):
     os.system(f"gsutil cp pagerank.pkl gs://{data_bucket_name}/")
-
-os.system(f"gsutil -m cp *.bin gs://{data_bucket_name}/")
 
 print(f"DONE! All index files uploaded to gs://{data_bucket_name}/")
