@@ -1,4 +1,5 @@
 import sys
+import io 
 from collections import Counter, OrderedDict
 import itertools
 from itertools import islice, count, groupby
@@ -17,12 +18,42 @@ PROJECT_ID = 'ir-final-project-2025'
 def get_bucket(bucket_name):
     return storage.Client(PROJECT_ID).bucket(bucket_name)
 
+
 def _open(path, mode, bucket=None):
     if bucket is None:
         return open(path, mode)
-    return bucket.blob(path).open(mode)
+    
+    blob = bucket.blob(path)
+    
+    #To handle different versions of google-cloud-storage:
 
-# Let's start with a small block size of 30 bytes just to test things out. 
+    if hasattr(blob, 'open'):
+        return blob.open(mode)
+
+    if 'r' in mode:
+        try:
+            data = blob.download_as_bytes()
+        except Exception:
+            data = b''
+        f = io.BytesIO(data)
+        f.name = blob.name
+        return f
+
+    class BlobWriter(io.BytesIO):
+        def __init__(self, blob_ref):
+            super().__init__()
+            self.name = blob_ref.name
+            self._blob = blob_
+ref
+        
+        def close(self):
+            if not self.closed:
+                self._blob.upload_from_string(self.getvalue())
+                super().close()
+    
+    return BlobWriter(blob)
+
+
 BLOCK_SIZE = 1999998
 
 class MultiFileWriter:
@@ -47,7 +78,7 @@ class MultiFileWriter:
                 self._f = next(self._file_gen)
                 pos, remaining = 0, BLOCK_SIZE
             self._f.write(b[:remaining])
-            name = self._f.name if hasattr(self._f, 'name') else self._f._blob.name
+            name = self._f.name
             locs.append((name, pos))
             b = b[remaining:]
         return locs
