@@ -50,7 +50,7 @@ def load_pickle_or_default(filename, default_val=None):
 
 
 BASE_PATH = "/home/moriyc"
-INDEX_PATH = os.path.join(BASE_PATH, "index.pkl")  # assume index.bin באותה תיקייה
+INDEX_PATH = os.path.join(BASE_PATH, "index.pkl")
 DL_PATH = os.path.join(BASE_PATH, "DL_dict.pkl")
 PR_PATH = os.path.join(BASE_PATH, "pr_dict.pkl")
 ID2TITLE_PATH = os.path.join(BASE_PATH, "ID2TITLE_dict.pkl")
