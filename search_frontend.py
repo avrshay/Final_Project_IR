@@ -1,7 +1,26 @@
-from BM25 import *
+import math
 import pickle
 from flask import Flask, request, jsonify
 import os
+import hashlib
+import re
+import nltk
+from nltk.stem.porter import *
+from nltk.corpus import stopwords
+from collections import Counter
+import pickle
+
+import sys
+from inverted_index_gcp import InvertedIndex
+
+nltk.download('stopwords')
+english_stopwords = frozenset(stopwords.words('english'))
+corpus_stopwords = ["category", "references", "also", "external", "links", "may", "first", "see", "history", "people", "one", "two", "part", "thumb", "including", "second", "following", "many", "however", "would", "became"]
+# Define Stopwords
+all_stopwords = english_stopwords.union(corpus_stopwords)
+RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
+
+
 
 
 class MyFlaskApp(Flask):
@@ -29,21 +48,92 @@ def load_pickle_or_default(filename, default_val=None):
         print(f"ERROR: Failed to load '{filename}'. Reason: {e}")
         return default_val
 
-#Loading files:
+
+BASE_PATH = "/home/moriyc"
+INDEX_PATH = os.path.join(BASE_PATH, "index.pkl")  # assume index.bin באותה תיקייה
+DL_PATH = os.path.join(BASE_PATH, "DL_dict.pkl")
+PR_PATH = os.path.join(BASE_PATH, "pr_dict.pkl")
+ID2TITLE_PATH = os.path.join(BASE_PATH, "ID2TITLE_dict.pkl")
+
 try:
-    # מניחים שהקובץ index.pkl ו-index.bin נמצאים בתיקייה הנוכחית
-    inverted = InvertedIndex.read_index('.', 'index')
+    inverted = InvertedIndex.read_index(BASE_PATH, 'index')
     print("Inverted Index loaded successfully.")
 except Exception as e:
     print(f"CRITICAL WARNING: Could not load Inverted Index. Search will not work. Reason: {e}")
-    inverted = None  # או שתאתחל אינדקס ריק: InvertedIndex()
+    inverted = None
 
-DL = load_pickle_or_default('DL.pkl')
-id_to_title = load_pickle_or_default('id_to_title.pkl')
-pagerank = load_pickle_or_default('pagerank.pkl')
+DL = load_pickle_or_default(DL_PATH)
+pagerank = load_pickle_or_default(PR_PATH)
+id_to_title = load_pickle_or_default(ID2TITLE_PATH)
 
-#Create the search engine
-bm25 = BM25_from_index(inverted, DL)
+
+
+
+
+class BM25_from_index:
+    """
+    BM25 wrapper that reads posting lists from disk only when needed.
+    """
+
+    def __init__(self, index, DL, base_dir=".", k1=1.5, b=0.7):
+        """
+        :param index: InvertedIndex object (after pickle load)
+        :param DL: dict {doc_id: doc_length}
+        :param base_dir: folder containing the .bin posting files
+        """
+        self.index = index
+        self.DL = DL
+        self.N = len(DL)
+        total_len = 0
+        for l in DL.values():
+            total_len += l
+        self.AVGDL = total_len / self.N
+        self.k1 = k1
+        self.b = b
+        self.base_dir = base_dir
+
+    def calc_idf(self, tokens):
+        idf = {}
+        for t in tokens:
+            df = self.index.df.get(t, 0)
+            idf[t] = math.log(1 + (self.N - df + 0.5) / (df + 0.5))
+        return idf
+
+    def search(self, query, N=10):
+        query_tokens = [tok.group() for tok in RE_WORD.finditer(query.lower())]
+        query_tokens = [t for t in query_tokens if t not in all_stopwords]
+        idf = self.calc_idf(query_tokens)
+        scores = Counter()
+
+        for term in query_tokens:
+            if term not in self.index.df:
+                continue
+
+            # Read posting list for this term from disk (lazy load)
+            posting_list = self.index.read_a_posting_list(self.base_dir, term)
+
+            for doc_id, freq in posting_list:
+                doc_len = self.DL.get(doc_id)
+                if doc_len is None:
+                    continue
+                num = idf[term] * freq * (self.k1 + 1)
+                den = freq + self.k1 * (1 - self.b + self.b * (doc_len / self.AVGDL))
+                scores[doc_id] += num / den
+        return scores.most_common(N)
+
+    def search_with_pagerank(self, query, N=10, alpha=0.8, M=30):
+        bm25_results = self.search(query, N=M)
+        reranked = []
+        for doc_id, bm25_score in bm25_results:
+            pr_score = pagerank.get(doc_id, 0.0)
+            final_score = alpha * bm25_score + (1 - alpha) * pr_score
+            reranked.append((doc_id, final_score))
+        reranked.sort(key=lambda x: x[1], reverse=True)
+        return reranked[:N]
+
+
+#  Create the search engine
+bm25 = BM25_from_index(inverted, DL,base_dir="")
 
 @app.route("/search")
 def search():
@@ -68,15 +158,11 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
+    search_results = bm25.search_with_pagerank(query, 10, 0.8, 20)
 
-    search_results = bm25.search(query, N=10)
+    predicted_ids = [str(doc_id) for doc_id, _ in search_results]
+    res = [(doc_id, id_to_title.get(str(doc_id), "UNKNOWN TITLE")) for doc_id in predicted_ids]
 
-    # (wiki_id, title)
-    for doc_id, score in search_results:
-
-        title = id_to_title.get(doc_id, "Unknown Title")
-
-        res.append((str(doc_id), title))
 
     # END SOLUTION
     return jsonify(res)
@@ -162,7 +248,7 @@ def search_anchor():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-    
+
     # END SOLUTION
     return jsonify(res)
 
@@ -187,7 +273,10 @@ def get_pagerank():
     if len(wiki_ids) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-
+    for doc_id in wiki_ids:
+        doc_id = int(doc_id)
+        pr_score = pagerank.get(doc_id, 0.0)
+        res.append(pr_score)
     # END SOLUTION
     return jsonify(res)
 

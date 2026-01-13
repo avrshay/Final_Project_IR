@@ -43,8 +43,7 @@ def _open(path, mode, bucket=None):
         def __init__(self, blob_ref):
             super().__init__()
             self.name = blob_ref.name
-            self._blob = blob_
-ref
+            self._blob = blob_ref
         
         def close(self):
             if not self.closed:
