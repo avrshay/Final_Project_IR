@@ -53,6 +53,7 @@ BASE_PATH = "/home/moriyc"
 INDEX_PATH = os.path.join(BASE_PATH, "index.pkl")
 DL_PATH = os.path.join(BASE_PATH, "DL_dict.pkl")
 PR_PATH = os.path.join(BASE_PATH, "pr_dict.pkl")
+PR_REG_PATH = os.path.join(BASE_PATH, "pr_dict_regular.pkl")
 ID2TITLE_PATH = os.path.join(BASE_PATH, "ID2TITLE_dict.pkl")
 
 try:
@@ -65,6 +66,7 @@ except Exception as e:
 DL = load_pickle_or_default(DL_PATH)
 pagerank = load_pickle_or_default(PR_PATH)
 id_to_title = load_pickle_or_default(ID2TITLE_PATH)
+pagerank_regular = load_pickle_or_default(PR_REG_PATH)
 
 
 
@@ -275,7 +277,7 @@ def get_pagerank():
     # BEGIN SOLUTION
     for doc_id in wiki_ids:
         doc_id = int(doc_id)
-        pr_score = pagerank.get(doc_id, 0.0)
+        pr_score = pagerank_regular.get(doc_id, 0.0)
         res.append(pr_score)
     # END SOLUTION
     return jsonify(res)
