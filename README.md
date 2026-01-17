@@ -160,14 +160,7 @@ Main class for implementing the Best Match 25 ranking algorithm.
 
 **API Endpoints**:
 - `POST /get_pagerank`: Accepts a list of article IDs and returns their corresponding PageRank scores
-
-
-## Integration Points
-
-The frontend interfaces with the pre-processed backend data through:
-1. **InvertedIndex class**: Loads index metadata and uses `read_a_posting_list` to fetch binary data from `.bin` files
-2. **Local File Access**: Reads dictionaries and indices directly from the local disk for low-latency API responses
-3. **Consistent Tokenization**: Uses the identical preprocessing pipeline (regex and stopwords) as the backend to ensure query terms match indexed terms
+- 
 
 ### - Performance Optimizations at the frontend -
 
