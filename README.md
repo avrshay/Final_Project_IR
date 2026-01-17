@@ -126,15 +126,6 @@ We have explained above
 
 ## search_frontend.py - Key Components
 
-### Setup Section
-- **Flask App Setup**: Initializes a `MyFlaskApp` instance running on port 8080
-- **Resource Loading**: Loads critical data structures from the local filesystem (`/home/moriyc`):
-    - `index.pkl`: The inverted index metadata
-    - `DL_dict.pkl`: Document lengths for BM25 normalization
-    - `pr_dict.pkl`: PageRank scores for authority-based ranking
-    - `ID2TITLE_dict.pkl`: Mapping of Wikipedia IDs to their corresponding titles
-- **Stopwords**: Combines standard NLTK English stopwords with Wikipedia-specific noise words (e.g., "category", "thumb", "links")
-
   
 ### BM25_from_index - Core Class
 Main class for implementing the Best Match 25 ranking algorithm.
@@ -146,13 +137,25 @@ Main class for implementing the Best Match 25 ranking algorithm.
 
 **Key Methods**:
 - `calc_idf()`: Calculates the Inverse Document Frequency for query terms using the formula: $ln(1 + \frac{N - n(t_i) + 0.5}{n(t_i) + 0.5})$
-- `search()`: Implements Term-at-a-Time (TAAT) scoring, retrieving specific posting lists and accumulating scores in a `Counter` object
-- `search_with_pagerank()`: Combines BM25 content scores with PageRank authority scores using a weighted linear combination ($\alpha$)
+- `search()`: Implements Term-at-a-Time (TAAT) scoring, retrieving specific posting lists and accumulating scores in a `Counter` object and returns the N(20) most relevant results             according to this metric
+- `search_with_pagerank()`: Combines BM25 content scores with PageRank authority scores using a weighted linear combination ($\alpha$) and returns the N(10) most relevant results according      to this metric
+
+- ### Setup Section
+- **Flask App Setup**: Initializes a `MyFlaskApp` instance running on port 8080
+- **Resource Loading**: Loads critical data structures from the local filesystem (`/home/moriyc`):
+    - `index.pkl`: The inverted index metadata
+    - `DL_dict.pkl`: Document lengths for BM25 normalization
+    - `pr_dict_regular.pkl`: PageRank scores for authority-based ranking
+    - `pr_dict.pkl`: PageRank normalized scores for authority-based ranking
+    - `ID2TITLE_dict.pkl`: Mapping of Wikipedia IDs to their corresponding titles
+- **Stopwords**: Combines standard NLTK English stopwords with Wikipedia-specific noise words (e.g., "category", "thumb", "links")
+-**BM25 Initialization:** Creates a BM25 ranking component using the precomputed inverted index and document length statistics.
+    This object is responsible for computing BM25 relevance scores at query time and serves as the primary content-based ranking mechanism before integration with PageRank.
 
 ### Search Implementation
 
 **Hybrid Ranking**:
-- `search_with_pagerank()`: Combines BM25 content scores with PageRank authority scores using a weighted linear combination ($\alpha$)
+- `search()`: Returns 10  most relevant results for the query (call to function: 'search_with_pagerank()')
 - Processes queries through the same `RE_WORD` regex pattern to ensure consistency with the backend processing
 
 **API Endpoints**:
